@@ -61,7 +61,7 @@ export const register = async (req, res) => {
         if (response) {
             return res.status(201).send({
                 message: "REGISTER_SUCCESS",
-                email: userEmail,
+                email:{email: userEmail},
                 status: 1
             })
         }
@@ -148,8 +148,10 @@ export const nodeMailer = async (req, res) => {
             },
         });
 
-        const emailFormat = /^[a-zA-Z0-9_.+]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/;
+const emailFormat = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
         let email = req.body.email?.toLowerCase();
+// console.log(emai);
 
         if (!email || !email.match(emailFormat)) {
             return res.status(400).json({
@@ -230,7 +232,7 @@ export const verifyOtp = async (req, res) => {
         const emailFormat = /^[a-zA-Z0-9_.+]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/;
         const otpFormat = /^\d{6}$/;
 
-        let email = req.body.email?.toLowerCase();
+        let email = req.body.email.toLowerCase();
         let otp = req.body.otp;
 
         if (!email || !otp) {
@@ -275,7 +277,11 @@ export const verifyOtp = async (req, res) => {
         // ✅ Success response
         return res.status(200).json({
             status: 1,
-            message: "OTP_VERIFIED"
+            message: "OTP_VERIFIED",
+            data:{
+otp:otp,
+email:email
+            }
         });
 
     } catch (error) {
@@ -293,7 +299,15 @@ export const resetPassword = async (req, res) => {
     const otpFormat = /^\d{6}$/;
     const passwordValidation = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,20}$/;
     const { email, otp, password } = req.body;
+console.log(req.body);
 
+    
+    if (!email || !password || !otp) {
+        return res.status(404).send({
+            status: 0,
+            message: "Please Enter Password"
+        })
+    }
     if (!email.match(emailFormat) || !password.match(passwordValidation) || !otp.match(otpFormat)) {
         return res.status(404).send({
             status: 0,
@@ -301,15 +315,8 @@ export const resetPassword = async (req, res) => {
         })
     }
 
-    if (!email || !password || !otp) {
-        return res.status(404).send({
-            status: 0,
-            message: "Please Enter Password"
-        })
-    }
-
     const verify = await User.findOne({ email: email, otp: otp });
-    //console.log(verify);
+    console.log(verify);
 
     if (!verify) {
         res.status(404).json({

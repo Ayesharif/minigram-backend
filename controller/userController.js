@@ -111,58 +111,151 @@ if (userUpdate.modifiedCount > 0) {
 
 }
 
+
+
 export const createPost = async (req, res) => {
-    
-    
+  try {
     const postData = { ...req.body };
-let imageData;
-if(req.file || req.files){
-    imageData = req.files.map(file => ({
-        imageUrl: file.path,       // Cloudinary URL
-        publicId: file.filename,   // Cloudinary public_id
-    }));
-}
 
-console.log(imageData);
+    // ✅ Images handling
+    let imageData = [];
 
-const    userId =new ObjectId(req.user._id)
+    if (req.files && req.files.length > 0) {
+      imageData = req.files.map(file => ({
+        imageUrl: file.path,      // Cloudinary URL
+        publicId: file.filename, // Cloudinary public_id
+      }));
+    }
 
+    const userId = new mongoose.Types.ObjectId(req.user._id);
 
-const StoredUser = await User.findOne({ _id: userId});
-
-
-if (!StoredUser) {
-    return res.status(500).send({
+    // ✅ Check user exists
+    const storedUser = await User.findById(userId);
+    if (!storedUser) {
+      return res.status(404).json({
         status: 0,
         message: "User Not Found"
-    })
-}   
+      });
+    }
 
-postData.images=imageData;
-postData.user=userId;
+    postData.images = imageData;
+    postData.user = userId;
 
-console.log(postData);
+    // ✅ Create post
+    const createdPost = await Post.create(postData);
 
+    // ✅ Fetch full post with aggregation
+    const posts = await Post.aggregate([
+      { $match: { _id: createdPost._id } },
 
-const response = await Post.create(postData)
-  .then(post => post.populate("user", "username profileImage"));
+      { $lookup: {
+        from: "users",
+        localField: "user",
+        foreignField: "_id",
+        as: "user",
+      }},
+      { $unwind: "$user" },
 
+      { $lookup: {
+        from: "comments",
+        localField: "_id",
+        foreignField: "post",
+        as: "comments",
+      }},
 
-        if (response) {
-            return res.status(201).send({
-                message: "Post Uploded ",
-                post:response,
-                status: 1
-            })
+      { $lookup: {
+        from: "users",
+        localField: "comments.user",
+        foreignField: "_id",
+        as: "commentUsers",
+      }},
+
+      {
+        $addFields: {
+          comments: {
+            $map: {
+              input: "$comments",
+              as: "comment",
+              in: {
+                _id: "$$comment._id",
+                text: "$$comment.text",
+                createdAt: "$$comment.createdAt",
+                user: {
+                  $arrayElemAt: [
+                    {
+                      $filter: {
+                        input: "$commentUsers",
+                        as: "cu",
+                        cond: { $eq: ["$$cu._id", "$$comment.user"] }
+                      }
+                    },
+                    0
+                  ]
+                }
+              }
+            }
+          }
         }
-        else {
-            return res.status(500).send({
-                message: "Something went wrong",
-                status: 0
-            })
-        }
+      },
 
-}
+      { $lookup: {
+        from: "likes",
+        localField: "_id",
+        foreignField: "post",
+        as: "likes",
+      }},
+
+      {
+        $addFields: {
+          commentsCount: { $size: "$comments" },
+          likesCount: { $size: "$likes" },
+          isLikedByMe: { $in: [userId, "$likes.user"] }
+        }
+      },
+
+      {
+        $project: {
+          content: 1,
+          images: 1,
+          createdAt: 1,
+
+          user: {
+            _id: 1,
+            username: 1,
+            profileImage: 1,
+          },
+
+          comments: {
+            _id: 1,
+            text: 1,
+            createdAt: 1,
+            "user._id": 1,
+            "user.username": 1,
+            "user.profileImage": 1,
+          },
+
+          commentsCount: 1,
+          likesCount: 1,
+          isLikedByMe: 1,
+        }
+      }
+    ]);
+
+    return res.status(201).json({
+      message: "Post Uploaded",
+      post: posts[0],
+      status: 1
+    });
+
+  } catch (error) {
+    console.error("Create Post Error:", error);
+    return res.status(500).json({
+      message: "Something went wrong",
+      status: 0
+    });
+  }
+};
+
 export const DeletePost = async (req, res) => {
   try {
     const postId = req.params.id;
@@ -601,19 +694,33 @@ export const addComment = async (req, res) => {
       .populate("user", "username profileImage"); 
 
     if(setComment){
+console.log("dfs",populatedComment);
 
           res.json({
         status: 1,
         message: "Comment added",
             postId:postId,
-            comment:populatedComment
+            comment:{
+              _id:populatedComment._id,
+              text:populatedComment.text,
+              createdAt:populatedComment.createdAt,
+              user:{
+               _id: populatedComment.user._id,
+               username: populatedComment.user.username,
+               profileImage:{
+               image:  populatedComment.user.profileImage.image,
+               publicId:  populatedComment.user.profileImage.publicId,
+
+               }
+              }
+            }
       });
     }
   }
     catch(error){
       console.log("error",error.message);
       
-   return re,s.status(500).send({
+   return res.status(500).send({
     message:"something went wrong",
     status:0
    })   
